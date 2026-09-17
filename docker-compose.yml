@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Servidor Web Apache + PHP 8.2
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: imss_conservacion_app
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      - DB_HOST=db
+      - DB_NAME=imss_conservacion
+      - DB_USER=imss_user
+      - DB_PASS=imss_secret
+    depends_on:
+      - db
+    networks:
+      - imss_net
+
+  # Base de Datos MySQL 8.0
+  db:
+    image: mysql:8.0
+    container_name: imss_conservacion_db
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_imss
+      MYSQL_DATABASE: imss_conservacion
+      MYSQL_USER: imss_user
+      MYSQL_PASSWORD: imss_secret
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - imss_net
+
+  # Gestor Visual de BD phpMyAdmin para Antigravity
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: imss_conservacion_pma
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+    depends_on:
+      - db
+    networks:
+      - imss_net
+
+networks:
+  imss_net:
+    driver: bridge
+
+volumes:
+  db_data:
+    driver: local

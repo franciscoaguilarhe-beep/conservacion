@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos de soporte para modo oscuro institucional y componentes UI */
+body {
+  background-color: #121212;
+  color: #E0E0E0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.card-dark {
+  background-color: #1E1E1E;
+  border: 1px solid #333333;
+  border-radius: 0.75rem;
+}
+
+.input-dark {
+  background-color: #242424;
+  border: 1px solid #3d3d3d;
+  color: #FFFFFF;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.input-dark:focus {
+  outline: none;
+  border-color: #0C6839;
+  box-shadow: 0 0 0 2px rgba(12, 104, 57, 0.4);
+}
+
+.btn-imss {
+  background-color: #0C6839;
+  color: #FFFFFF;
+  font-weight: 600;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+.btn-imss:hover {
+  background-color: #09522D;
+}

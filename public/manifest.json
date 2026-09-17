@@ -1,0 +1,44 @@
+﻿{
+  "id": "portal-conservacion-imss",
+  "name": "Portal de Conservación IMSS",
+  "short_name": "Conservación",
+  "start_url": "index.php",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121212",
+  "theme_color": "#0C6839",
+  "description": "Plataforma de Gestión de Conservación IMSS",
+  "icons": [
+    {
+      "src": "favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "conservacion.png",
+      "sizes": "485x486",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
