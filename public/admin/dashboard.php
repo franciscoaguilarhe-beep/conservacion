@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Dashboard Administrativo de Conservación IMSS
  */
@@ -58,6 +58,20 @@ if ($selectedUnidadId) {
     $sqlWhereUnit = " AND r.unidad_id = " . (int)$userUnidadId;
 }
 
+// Asegurar esquema de rechazo/eliminación en base de datos
+try {
+    $db->exec("ALTER TABLE reportes MODIFY COLUMN estatus ENUM('Pendiente', 'Asignado', 'Concluido', 'Rechazado') NOT NULL DEFAULT 'Pendiente'");
+} catch (Exception $e) {}
+try {
+    $db->exec("ALTER TABLE reportes ADD COLUMN motivo_rechazo TEXT NULL AFTER recomendaciones");
+} catch (Exception $e) {}
+try {
+    $db->exec("ALTER TABLE reportes ADD COLUMN usuario_rechazo_id INT NULL AFTER usuario_asigno_id");
+} catch (Exception $e) {}
+try {
+    $db->exec("ALTER TABLE reportes ADD COLUMN fecha_rechazo DATETIME NULL AFTER fecha_conclusion");
+} catch (Exception $e) {}
+
 // Consultar métricas de tickets
 $sqlMetricas = "
     SELECT 
@@ -65,23 +79,30 @@ $sqlMetricas = "
         SUM(CASE WHEN estatus = 'Pendiente' THEN 1 ELSE 0 END) AS pendientes,
         SUM(CASE WHEN estatus = 'Asignado' THEN 1 ELSE 0 END) AS asignados,
         SUM(CASE WHEN estatus = 'Concluido' THEN 1 ELSE 0 END) AS concluidos,
+        SUM(CASE WHEN estatus = 'Rechazado' THEN 1 ELSE 0 END) AS rechazados,
         COALESCE(MAX(id), 0) AS max_id
     FROM reportes r
     WHERE 1=1 {$sqlWhereUnit}
 ";
 $metricas = $db->query($sqlMetricas)->fetch();
 
+$esHistorial = in_array($filtroEstatus, ['Concluido', 'Rechazado', 'Historial']);
+
 // Consultar tickets para la tabla principal
 $sqlTickets = "
     SELECT r.*, a.nombre_area, u.clave_unidad,
-           p.nombre AS nombre_tecnico, p.categoria AS categoria_tecnico
+           p.nombre AS nombre_tecnico, p.categoria AS categoria_tecnico,
+           u_rech.nombre_completo AS nombre_rechazo, u_rech.rol AS rol_rechazo
     FROM reportes r
     INNER JOIN unidades u ON r.unidad_id = u.id
     INNER JOIN areas_maestro a ON r.area_id = a.id
     LEFT JOIN personal_operativo p ON r.tecnico_asignado_id = p.id
+    LEFT JOIN usuarios_admin u_rech ON r.usuario_rechazo_id = u_rech.id
     WHERE 1=1 {$sqlWhereUnit}
 ";
-if ($filtroEstatus && in_array($filtroEstatus, ['Pendiente', 'Asignado', 'Concluido'])) {
+if ($filtroEstatus === 'Historial') {
+    $sqlTickets .= " AND r.estatus IN ('Concluido', 'Rechazado')";
+} elseif ($filtroEstatus && in_array($filtroEstatus, ['Pendiente', 'Asignado', 'Concluido', 'Rechazado'])) {
     $sqlTickets .= " AND r.estatus = " . $db->quote($filtroEstatus);
 } else {
     $sqlTickets .= " AND r.estatus IN ('Pendiente', 'Asignado')";
@@ -338,6 +359,60 @@ $tickets = $db->query($sqlTickets)->fetchAll();
             border: 1px solid #1d4ed8;
         }
         .btn-orden:hover { background-color: #1d4ed8; }
+        .btn-eliminar {
+            background-color: #dc2626;
+            color: #FFFFFF;
+            border: 1px solid #b91c1c;
+        }
+        .btn-eliminar:hover { background-color: #b91c1c; }
+        .status-rechazado {
+            color: #991b1b;
+            background: #fee2e2;
+            padding: 0.2rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            border: 1px solid #fecaca;
+            display: inline-block;
+        }
+        .historial-tabs {
+            display: inline-flex;
+            background: #e5e7eb;
+            padding: 0.25rem;
+            border-radius: 8px;
+            gap: 0.25rem;
+        }
+        .historial-tab {
+            padding: 0.45rem 0.9rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-decoration: none;
+            color: #4b5563;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .historial-tab:hover {
+            color: #111827;
+            background: rgba(255,255,255,0.5);
+        }
+        .historial-tab.active {
+            background: #1f2937;
+            color: #FFFFFF;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .historial-tab .tab-count {
+            background: rgba(255,255,255,0.2);
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+        }
+        .historial-tab:not(.active) .tab-count {
+            background: #d1d5db;
+            color: #374151;
+        }
 
         /* Filtro de Unidad */
         .filter-card {
@@ -443,11 +518,11 @@ $tickets = $db->query($sqlTickets)->fetchAll();
                 <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
                 Generar Reportes
             </a>
-            <a href="dashboard.php" class="sidebar-item <?= ($filtroEstatus !== 'Concluido') ? 'active' : '' ?>">
+            <a href="dashboard.php" class="sidebar-item <?= (!$esHistorial) ? 'active' : '' ?>">
                 <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 Reportes Activos
             </a>
-            <a href="dashboard.php?estatus=Concluido" class="sidebar-item <?= ($filtroEstatus === 'Concluido') ? 'active' : '' ?>">
+            <a href="dashboard.php?estatus=Concluido" class="sidebar-item <?= ($esHistorial) ? 'active' : '' ?>">
                 <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 Historial
             </a>
@@ -479,45 +554,78 @@ $tickets = $db->query($sqlTickets)->fetchAll();
         <main class="main-content">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1.25rem;">
                 <div>
-                    <h2 class="page-title" style="margin:0 0 0.35rem 0;"><?= ($filtroEstatus === 'Concluido') ? 'Historial de Servicios' : 'Reportes Activos' ?></h2>
+                    <h2 class="page-title" style="margin:0 0 0.35rem 0;">
+                        <?php if ($filtroEstatus === 'Rechazado'): ?>
+                            Historial de Reportes Rechazados / Eliminados
+                        <?php elseif ($esHistorial): ?>
+                            Historial de Servicios
+                        <?php else: ?>
+                            Reportes Activos
+                        <?php endif; ?>
+                    </h2>
                     <div class="title-underline" style="margin-bottom:0;"></div>
                 </div>
-                <?php if (count($unidadesDisponibles) > 1 || $userRol === 'SuperAdmin'): ?>
-                    <form method="GET" class="filter-card">
-                        <?php if ($filtroEstatus): ?><input type="hidden" name="estatus" value="<?= h($filtroEstatus) ?>"><?php endif; ?>
-                        <label style="font-size:0.85rem; font-weight:700; color:#374151;">Unidad:</label>
-                        <select name="unidad_id" onchange="this.form.submit()" class="unit-select">
-                            <option value="" style="background-color:#1f2937; color:#FFFFFF;">-- Todas mis unidades (<?= count($unidadesDisponibles) ?>) --</option>
-                            <?php foreach ($unidadesDisponibles as $ud): ?>
-                                <option value="<?= $ud['id'] ?>" <?= ($selectedUnidadId == $ud['id']) ? 'selected' : '' ?> style="background-color:#1f2937; color:#FFFFFF;">
-                                    <?= h($ud['clave_unidad']) ?> - <?= h($ud['nombre_unidad']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </form>
-                <?php endif; ?>
+                <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                    <?php if ($esHistorial): ?>
+                        <?php $unitQuery = $selectedUnidadId ? '&unidad_id=' . (int)$selectedUnidadId : ''; ?>
+                        <div class="historial-tabs">
+                            <a href="dashboard.php?estatus=Concluido<?= $unitQuery ?>" class="historial-tab <?= ($filtroEstatus === 'Concluido') ? 'active' : '' ?>">
+                                ✅ Concluidos <span class="tab-count"><?= (int)($metricas['concluidos'] ?? 0) ?></span>
+                            </a>
+                            <a href="dashboard.php?estatus=Rechazado<?= $unitQuery ?>" class="historial-tab <?= ($filtroEstatus === 'Rechazado') ? 'active' : '' ?>">
+                                🚫 Rechazados / Eliminados <span class="tab-count"><?= (int)($metricas['rechazados'] ?? 0) ?></span>
+                            </a>
+                            <a href="dashboard.php?estatus=Historial<?= $unitQuery ?>" class="historial-tab <?= ($filtroEstatus === 'Historial') ? 'active' : '' ?>">
+                                📋 Todos <span class="tab-count"><?= (int)($metricas['concluidos'] ?? 0) + (int)($metricas['rechazados'] ?? 0) ?></span>
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (count($unidadesDisponibles) > 1 || $userRol === 'SuperAdmin'): ?>
+                        <form method="GET" class="filter-card">
+                            <?php if ($filtroEstatus): ?><input type="hidden" name="estatus" value="<?= h($filtroEstatus) ?>"><?php endif; ?>
+                            <label style="font-size:0.85rem; font-weight:700; color:#374151;">Unidad:</label>
+                            <select name="unidad_id" onchange="this.form.submit()" class="unit-select">
+                                <option value="" style="background-color:#1f2937; color:#FFFFFF;">-- Todas mis unidades (<?= count($unidadesDisponibles) ?>) --</option>
+                                <?php foreach ($unidadesDisponibles as $ud): ?>
+                                    <option value="<?= $ud['id'] ?>" <?= ($selectedUnidadId == $ud['id']) ? 'selected' : '' ?> style="background-color:#1f2937; color:#FFFFFF;">
+                                        <?= h($ud['clave_unidad']) ?> - <?= h($ud['nombre_unidad']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </form>
+                    <?php endif; ?>
+                </div>
             </div>
 
+            <?php
+                $showMultiUnitCol = (!$selectedUnidadId && (count($unidadesDisponibles) > 1 || $userRol === 'SuperAdmin'));
+                $showRechazoCols = ($filtroEstatus === 'Rechazado' || $filtroEstatus === 'Historial');
+                $totalColSpan = 6 + ($showMultiUnitCol ? 1 : 0) + ($showRechazoCols ? 2 : 0);
+            ?>
             <div class="table-scroll-container">
             <table class="admin-table" id="adminDashboardTable" data-last-id="<?= (int)$metricas['max_id'] ?>">
                 <thead>
                     <tr>
                         <th>Folio</th>
-                        <?php if (!$selectedUnidadId && (count($unidadesDisponibles) > 1 || $userRol === 'SuperAdmin')): ?>
+                        <?php if ($showMultiUnitCol): ?>
                             <th>Unidad</th>
                         <?php endif; ?>
                         <th>Área</th>
                         <th>Falla Exacta</th>
                         <th>Hora Recepción</th>
                         <th>Estatus</th>
+                        <?php if ($showRechazoCols): ?>
+                            <th>Motivo de Rechazo / Eliminación</th>
+                            <th>Rechazado Por</th>
+                        <?php endif; ?>
                         <th style="text-align:center;">Acción</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($tickets)): ?>
                         <tr>
-                            <td colspan="<?= (!$selectedUnidadId && (count($unidadesDisponibles) > 1 || $userRol === 'SuperAdmin')) ? '7' : '6' ?>" style="text-align: center; color: #888; padding: 2rem;">
-                                No hay reportes de servicio registrados.
+                            <td colspan="<?= $totalColSpan ?>" style="text-align: center; color: #888; padding: 2rem;">
+                                No hay reportes de servicio registrados en esta categoría.
                             </td>
                         </tr>
                     <?php else: ?>
@@ -526,7 +634,7 @@ $tickets = $db->query($sqlTickets)->fetchAll();
                                 <td style="color: #111827; font-weight:700;">
                                     <?= h($t['folio']) ?>
                                 </td>
-                                <?php if (!$selectedUnidadId && (count($unidadesDisponibles) > 1 || $userRol === 'SuperAdmin')): ?>
+                                <?php if ($showMultiUnitCol): ?>
                                     <td><span class="clave-pill"><?= h($t['clave_unidad']) ?></span></td>
                                 <?php endif; ?>
                                 <td style="color: #374151;">
@@ -536,24 +644,50 @@ $tickets = $db->query($sqlTickets)->fetchAll();
                                     <?= h(strlen($t['descripcion_falla']) > 40 ? substr($t['descripcion_falla'], 0, 40) . '...' : $t['descripcion_falla']) ?>
                                 </td>
                                 <td style="color: #374151; white-space:nowrap;">
-                                    <?= date('h:i A', strtotime($t['fecha_recepcion'])) ?>
+                                    <?= date('d/m/Y h:i A', strtotime($t['fecha_recepcion'])) ?>
                                 </td>
                                 <td>
                                     <?php if ($t['estatus'] === 'Pendiente'): ?>
                                         <span class="status-rojo">Pendiente</span>
                                     <?php elseif ($t['estatus'] === 'Asignado'): ?>
                                         <span class="status-azul">Asignado</span>
+                                    <?php elseif ($t['estatus'] === 'Rechazado'): ?>
+                                        <span class="status-rechazado">Rechazado</span>
                                     <?php else: ?>
                                         <span class="status-verde">Concluido</span>
                                     <?php endif; ?>
                                 </td>
+                                <?php if ($showRechazoCols): ?>
+                                    <td style="color: #991b1b; font-size:0.84rem; max-width: 240px;">
+                                        <?php if ($t['estatus'] === 'Rechazado' && !empty($t['motivo_rechazo'])): ?>
+                                            <strong><?= h($t['motivo_rechazo']) ?></strong>
+                                        <?php else: ?>
+                                            <span style="color:#9ca3af;">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td style="color: #374151; font-size:0.82rem; white-space:nowrap;">
+                                        <?php if ($t['estatus'] === 'Rechazado'): ?>
+                                            <div style="font-weight:700; color:#111827;"><?= h($t['nombre_rechazo'] ?? 'Usuario Admin') ?></div>
+                                            <?php if (!empty($t['fecha_rechazo'])): ?>
+                                                <div style="font-size:0.75rem; color:#6b7280;"><?= date('d/m/Y h:i A', strtotime($t['fecha_rechazo'])) ?></div>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span style="color:#9ca3af;">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                <?php endif; ?>
                                 <td style="text-align: center; white-space:nowrap;">
-                                    <button onclick="event.stopPropagation(); gestionarTicket(<?= (int)$t['id'] ?>)" class="btn-action btn-atender" title="Atender / Gestionar Ticket">
+                                    <button onclick="event.stopPropagation(); gestionarTicket(<?= (int)$t['id'] ?>)" class="btn-action btn-atender" title="<?= ($t['estatus'] === 'Rechazado') ? 'Ver Detalle de Rechazo' : 'Atender / Gestionar Ticket' ?>">
                                         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                     </button>
                                     <a href="../reporte_pdf.php?id=<?= (int)$t['id'] ?>" target="_blank" onclick="event.stopPropagation();" class="btn-action btn-imprimir" title="Imprimir Ticket">
                                         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                                     </a>
+                                    <?php if ($t['estatus'] === 'Pendiente' || $t['estatus'] === 'Asignado'): ?>
+                                    <button onclick="event.stopPropagation(); abrirModalEliminarTicket(<?= (int)$t['id'] ?>, '<?= h(addslashes($t['folio'])) ?>', '<?= h(addslashes($t['nombre_area'])) ?>', '<?= h(addslashes(substr($t['descripcion_falla'], 0, 80))) ?>')" class="btn-action btn-eliminar" title="Eliminar / Rechazar Reporte">
+                                        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                    </button>
+                                    <?php endif; ?>
                                     <?php if ($t['estatus'] === 'Asignado' || $t['estatus'] === 'Concluido'): ?>
                                     <a href="../orden_servicio.php?id=<?= (int)$t['id'] ?>" target="_blank" onclick="event.stopPropagation();" class="btn-action btn-orden" title="Imprimir Orden y Entrega de Servicio" style="background:#2563EB;">
                                         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
@@ -807,9 +941,69 @@ $tickets = $db->query($sqlTickets)->fetchAll();
                 </button>
 
                 <a id="mgBtnPdfNormado" href="#" target="_blank" class="btn btn-primary" style="width: 100%;">
-                    🖨� Imprimir Formato Institucional Normado (Clave 14C2-003-002)
+                    🖨 Imprimir Formato Institucional Normado (Clave 14C2-003-002)
                 </a>
             </div>
+
+            <!-- FASE 4: DETALLE DE TICKET RECHAZADO / ELIMINADO -->
+            <div id="seccionRechazado" style="display: none; text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🚫</div>
+                <h4 style="font-size: 1.15rem; font-weight: 800; color: #F87171; margin-bottom: 0.5rem;">
+                    Reporte No Procedente / Eliminado
+                </h4>
+                <p style="font-size: 0.85rem; color: #D1D5DB; margin-bottom: 1rem;">
+                    Rechazado por <strong id="mgRechazadoUsuario" style="color: #FFFFFF;">---</strong> el <span id="mgRechazadoFecha" style="color:#FFFFFF;">---</span>.
+                </p>
+                <div style="background: rgba(220, 38, 38, 0.12); border: 1px solid rgba(220, 38, 38, 0.4); padding: 1rem; border-radius: 0.5rem; text-align: left; margin-bottom: 1rem; font-size: 0.9rem;">
+                    <strong style="color:#FCA5A5; display:block; margin-bottom: 0.35rem;">Motivo de Rechazo / Eliminación:</strong>
+                    <div id="mgRechazadoMotivo" style="color: #FFFFFF; font-weight: 600; line-height: 1.4;">---</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Pop-Up para Eliminar / Rechazar Ticket -->
+    <div id="modalEliminarTicket" class="modal-overlay" style="z-index:1800;">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="card-header" style="margin-bottom: 1rem; border-bottom: 1px solid #374151; padding-bottom: 0.75rem;">
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <div style="background:rgba(220,38,38,0.2); color:#F87171; width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center;">
+                        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; margin:0;">Eliminar / Rechazar Reporte</h3>
+                        <div style="font-size: 0.85rem; color: #F87171; font-weight: 700;" id="delModalFolio">---</div>
+                    </div>
+                </div>
+                <button onclick="closeModal('modalEliminarTicket')" class="btn" style="background:transparent; color:#9CA3AF; font-size:1.25rem;">✖</button>
+            </div>
+
+            <div style="background: #242424; border: 1px solid #374151; border-radius: 8px; padding: 0.85rem; margin-bottom: 1rem; font-size: 0.85rem; color: #D1D5DB;">
+                <div style="margin-bottom: 0.3rem;"><strong style="color:#FACC15;">Área:</strong> <span id="delModalArea">---</span></div>
+                <div><strong style="color:#FACC15;">Trabajo / Falla:</strong> <span id="delModalFalla">---</span></div>
+            </div>
+
+            <form id="formEliminarTicket" onsubmit="confirmarEliminarTicket(event)">
+                <input type="hidden" id="delTicketId" name="ticket_id">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="delMotivoRechazo" style="color:#FFFFFF; font-weight:700; font-size:0.88rem; margin-bottom:0.4rem; display:block;">
+                        Motivo por el que no procede o se elimina la solicitud *
+                    </label>
+                    <textarea id="delMotivoRechazo" name="motivo_rechazo" rows="3" required placeholder="Escriba detalladamente el motivo por el cual no procede esta solicitud (ej. Reporte duplicado, equipo corresponde a proveedor externo, etc.)..." style="width:100%; background:#242424; color:#FFFFFF; border:1px solid #555; padding:0.65rem 0.75rem; border-radius:6px; font-size:0.9rem;"></textarea>
+                    <small style="color:#9CA3AF; font-size:0.76rem; display:block; margin-top:0.35rem;">
+                        ℹ️ Este reporte se moverá al Historial de Rechazados junto con el motivo y su usuario (<strong><?= h($_SESSION['user_name']) ?></strong>).
+                    </small>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+                    <button type="button" onclick="closeModal('modalEliminarTicket')" class="btn btn-secondary" style="padding:0.55rem 1.25rem;">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="btnConfirmarEliminar" class="btn" style="background:#dc2626; color:#FFFFFF; font-weight:700; padding:0.55rem 1.4rem; border:none; border-radius:6px; cursor:pointer;">
+                        🗑️ Confirmar y Guardar en Historial
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -1052,6 +1246,59 @@ $tickets = $db->query($sqlTickets)->fetchAll();
                         document.getElementById('fecha_conclusion_manual').value = localISOTime;
                     }
                 }
+            }
+        }
+
+        function abrirModalEliminarTicket(id, folio, area, falla) {
+            document.getElementById('delTicketId').value = id;
+            document.getElementById('delModalFolio').textContent = folio;
+            document.getElementById('delModalArea').textContent = area;
+            document.getElementById('delModalFalla').textContent = falla;
+            document.getElementById('delMotivoRechazo').value = '';
+            openModal('modalEliminarTicket');
+            setTimeout(() => {
+                const txt = document.getElementById('delMotivoRechazo');
+                if (txt) txt.focus();
+            }, 100);
+        }
+
+        async function confirmarEliminarTicket(e) {
+            e.preventDefault();
+            const ticketId = document.getElementById('delTicketId').value;
+            const motivo = document.getElementById('delMotivoRechazo').value.trim();
+
+            if (!motivo) {
+                alert('Por favor escriba el motivo por el cual se elimina o no procede el reporte.');
+                return;
+            }
+
+            const btn = document.getElementById('btnConfirmarEliminar');
+            btn.disabled = true;
+            btn.innerHTML = 'Guardando...';
+
+            const fd = new FormData();
+            fd.append('ticket_id', ticketId);
+            fd.append('motivo_rechazo', motivo);
+
+            try {
+                const res = await fetch('api.php?action=reject_ticket', {
+                    method: 'POST',
+                    body: fd
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Reporte eliminado de Activos y registrado en el Historial de Rechazados.');
+                    closeModal('modalEliminarTicket');
+                    location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'No se pudo procesar la solicitud.'));
+                    btn.disabled = false;
+                    btn.innerHTML = '🗑️ Confirmar y Guardar en Historial';
+                }
+            } catch (err) {
+                alert('Error de conexión con el servidor.');
+                btn.disabled = false;
+                btn.innerHTML = '🗑️ Confirmar y Guardar en Historial';
             }
         }
     </script>

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * API Administrativa - Polling, Asignación y Cierre de Tickets
  */
@@ -58,13 +58,29 @@ if ($action === 'get_ticket') {
         exit;
     }
 
+    // Asegurar esquema de rechazo/eliminación
+    try {
+        $db->exec("ALTER TABLE reportes MODIFY COLUMN estatus ENUM('Pendiente', 'Asignado', 'Concluido', 'Rechazado') NOT NULL DEFAULT 'Pendiente'");
+    } catch (Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE reportes ADD COLUMN motivo_rechazo TEXT NULL AFTER recomendaciones");
+    } catch (Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE reportes ADD COLUMN usuario_rechazo_id INT NULL AFTER usuario_asigno_id");
+    } catch (Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE reportes ADD COLUMN fecha_rechazo DATETIME NULL AFTER fecha_conclusion");
+    } catch (Exception $e) {}
+
     $stmt = $db->prepare("
         SELECT r.*, a.nombre_area, p.nombre AS nombre_tecnico, p.categoria AS categoria_tecnico,
-               u_asig.nombre_completo AS nombre_elaboro
+               u_asig.nombre_completo AS nombre_elaboro,
+               u_rech.nombre_completo AS nombre_rechazo, u_rech.rol AS rol_rechazo
         FROM reportes r
         INNER JOIN areas_maestro a ON r.area_id = a.id
         LEFT JOIN personal_operativo p ON r.tecnico_asignado_id = p.id
         LEFT JOIN usuarios_admin u_asig ON r.usuario_asigno_id = u_asig.id
+        LEFT JOIN usuarios_admin u_rech ON r.usuario_rechazo_id = u_rech.id
         WHERE r.id = ?
         LIMIT 1
     ");
@@ -75,6 +91,54 @@ if ($action === 'get_ticket') {
         echo json_encode(['success' => true, 'ticket' => $ticket]);
     } else {
         echo json_encode(['success' => false, 'error' => 'Ticket no encontrado']);
+    }
+    exit;
+}
+
+// 2.1 Eliminar / Rechazar Reporte con Motivo e Historial
+if ($action === 'reject_ticket') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        echo json_encode(['success' => false, 'error' => 'Método inválido']);
+        exit;
+    }
+
+    $ticketId = filter_input(INPUT_POST, 'ticket_id', FILTER_VALIDATE_INT);
+    $motivoRechazo = strtoupper(trim(filter_input(INPUT_POST, 'motivo_rechazo', FILTER_SANITIZE_SPECIAL_CHARS) ?? ''));
+    $usuarioRechazoId = $_SESSION['user_id'] ?? null;
+
+    if (!$ticketId || empty($motivoRechazo)) {
+        echo json_encode(['success' => false, 'error' => 'Debe proporcionar el motivo por el cual no procede o se elimina el reporte.']);
+        exit;
+    }
+
+    // Asegurar columnas de rechazo en la tabla reportes
+    try {
+        $db->exec("ALTER TABLE reportes MODIFY COLUMN estatus ENUM('Pendiente', 'Asignado', 'Concluido', 'Rechazado') NOT NULL DEFAULT 'Pendiente'");
+    } catch (Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE reportes ADD COLUMN motivo_rechazo TEXT NULL AFTER recomendaciones");
+    } catch (Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE reportes ADD COLUMN usuario_rechazo_id INT NULL AFTER usuario_asigno_id");
+    } catch (Exception $e) {}
+    try {
+        $db->exec("ALTER TABLE reportes ADD COLUMN fecha_rechazo DATETIME NULL AFTER fecha_conclusion");
+    } catch (Exception $e) {}
+
+    try {
+        $stmt = $db->prepare("
+            UPDATE reportes
+            SET estatus = 'Rechazado',
+                motivo_rechazo = ?,
+                usuario_rechazo_id = ?,
+                fecha_rechazo = NOW()
+            WHERE id = ?
+        ");
+        $stmt->execute([$motivoRechazo, $usuarioRechazoId, $ticketId]);
+
+        echo json_encode(['success' => true, 'message' => 'Reporte marcado como no procedente / eliminado y guardado en el historial.']);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
     exit;
 }

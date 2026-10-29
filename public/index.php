@@ -17,11 +17,13 @@ if ($folioParam) {
     $tabActivo = 'estatus'; // Forzar tab de estatus si se consulta un folio
     $stmt = $db->prepare("
         SELECT r.*, a.nombre_area, u.nombre_unidad, u.clave_unidad, u.ubicacion,
-               p.nombre AS nombre_tecnico, p.categoria AS categoria_tecnico, p.turno AS turno_tecnico
+               p.nombre AS nombre_tecnico, p.categoria AS categoria_tecnico, p.turno AS turno_tecnico,
+               u_rech.nombre_completo AS nombre_rechazo, u_rech.rol AS rol_rechazo
         FROM reportes r
         INNER JOIN unidades u ON r.unidad_id = u.id
         INNER JOIN areas_maestro a ON r.area_id = a.id
         LEFT JOIN personal_operativo p ON r.tecnico_asignado_id = p.id
+        LEFT JOIN usuarios_admin u_rech ON r.usuario_rechazo_id = u_rech.id
         WHERE r.folio = ?
         LIMIT 1
     ");
@@ -454,6 +456,35 @@ $isTabEstatus = ($tabActivo === 'estatus');
                 </p>
             </div>
         <?php elseif ($ticket): ?>
+            <?php if ($ticket['estatus'] === 'Rechazado'): ?>
+                <div style="background-color: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 10px; padding: 2rem; margin-top: 1.5rem; text-align: left; max-width: 650px; margin-left: auto; margin-right: auto;">
+                    <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom: 1rem;">
+                        <span style="font-size: 2rem;">🚫</span>
+                        <div>
+                            <h3 style="color: #F87171; font-size: 1.3rem; font-weight: 800; margin: 0;">
+                                Solicitud No Procedente / Rechazada
+                            </h3>
+                            <div style="color: #9CA3AF; font-size: 0.85rem;">
+                                Folio: <strong style="color:#FFFFFF;"><?= h($ticket['folio']) ?></strong>
+                                <?php if (!empty($ticket['fecha_rechazo'])): ?>
+                                    • Fecha: <?= date('d/m/Y h:i A', strtotime($ticket['fecha_rechazo'])) ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="background: #242424; border-left: 4px solid #EF4444; padding: 1rem; border-radius: 6px; margin-bottom: 0.85rem;">
+                        <div style="font-size: 0.8rem; color: #FCA5A5; font-weight: 700; text-transform: uppercase; margin-bottom: 0.3rem;">Motivo por el que no procede:</div>
+                        <div style="color: #FFFFFF; font-size: 0.98rem; font-weight: 600; line-height: 1.45;">
+                            <?= h($ticket['motivo_rechazo'] ?: 'No especificado') ?>
+                        </div>
+                    </div>
+                    <?php if (!empty($ticket['nombre_rechazo'])): ?>
+                        <div style="font-size: 0.85rem; color: #D1D5DB;">
+                            Revisión realizada por: <strong style="color: #FFFFFF;"><?= h($ticket['nombre_rechazo']) ?></strong>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php else: ?>
             <?php
                 $estatus = $ticket['estatus'];
                 $isAsignado = in_array($estatus, ['Asignado', 'Concluido']);
@@ -526,6 +557,7 @@ $isTabEstatus = ($tabActivo === 'estatus');
                     </a>
                 </div>
             </div>
+            <?php endif; ?>
         <?php endif; ?>
     </main>
 

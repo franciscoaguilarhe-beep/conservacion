@@ -211,10 +211,12 @@ async function gestionarTicket(ticketId) {
         const secAsignar = document.getElementById('seccionAsignacion');
         const secCierre = document.getElementById('seccionCierre');
         const secConcluido = document.getElementById('seccionConcluido');
+        const secRechazado = document.getElementById('seccionRechazado');
 
         secAsignar.style.display = 'none';
         secCierre.style.display = 'none';
         secConcluido.style.display = 'none';
+        if (secRechazado) secRechazado.style.display = 'none';
 
         if (t.estatus === 'Pendiente') {
             secAsignar.style.display = 'block';
@@ -305,6 +307,16 @@ async function gestionarTicket(ticketId) {
             } else {
                 secEvidencia.style.display = 'none';
                 secNoEvidencia.style.display = 'block';
+            }
+        } else if (t.estatus === 'Rechazado') {
+            if (secRechazado) {
+                secRechazado.style.display = 'block';
+                const uRech = document.getElementById('mgRechazadoUsuario');
+                const fRech = document.getElementById('mgRechazadoFecha');
+                const mRech = document.getElementById('mgRechazadoMotivo');
+                if (uRech) uRech.textContent = t.nombre_rechazo ? `${t.nombre_rechazo} (${t.rol_rechazo || 'Admin'})` : 'Usuario Administrativo';
+                if (fRech) fRech.textContent = t.fecha_rechazo || 'No registrada';
+                if (mRech) mRech.textContent = t.motivo_rechazo || 'Sin motivo especificado';
             }
         }
 
